@@ -1,0 +1,28 @@
+[application]
+
+
+[web.app]
+
+# HTML title tag content
+title = "반 배정 프로그램"
+name = "class-assigner-dx"      # 프로젝트 이름
+base_path = "class_assigner_dx"
+
+[web.watcher]
+watch_path = ["src", "assets"]
+
+
+# include `assets` in web platform
+[web.resource]
+
+# Additional CSS style files
+style = []
+
+# Additional JavaScript files
+script = []
+
+[web.resource.dev]
+
+# Javascript code file
+# serve: [dev-server] only
+script = []
