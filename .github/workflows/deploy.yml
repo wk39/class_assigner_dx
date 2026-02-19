@@ -23,7 +23,9 @@ jobs:
         run: cargo install dioxus-cli
 
       - name: Build Project
-        run: dx build --release --platform web
+        run: |
+          dx build --release --platform web
+          cp target/dx/class-assigner/release/web/public/index.html target/dx/class-assigner/release/web/public/404.html
 
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
