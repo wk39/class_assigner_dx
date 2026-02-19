@@ -25,3 +25,9 @@ default = ["web"]
 web = ["dioxus/web"]
 desktop = ["dioxus/desktop"]
 mobile = ["dioxus/mobile"]
+
+[profile.release]
+strip = true    # 모든 심볼 및 디버그 정보 제거
+opt-level = "z" # 크기 최적화
+lto = true
+debug = false
