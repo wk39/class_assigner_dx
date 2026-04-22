@@ -371,7 +371,6 @@ fn parse_students_csv(content: &str, start_id: u32) -> Vec<Student> {
 
 #[derive(Clone)]
 struct AppState {
-    count: i32,
     number_of_class: u8,
     //
     students: Vec<Student>,
@@ -381,6 +380,8 @@ struct AppState {
     opt_gender: bool,
     //
     assignments: Option<Vec<ClassInfo>>,
+    //
+    consented: bool,
 }
 
 fn App() -> Element {
@@ -408,7 +409,6 @@ fn App() -> Element {
 
     use_context_provider(move || {
         Signal::new(AppState {
-            count: 0,
             number_of_class: 10,
             //
             students,
@@ -419,6 +419,8 @@ fn App() -> Element {
             opt_gender: true,
             //
             assignments: None,
+            //
+            consented: false,
         })
     });
 
@@ -435,6 +437,10 @@ fn App() -> Element {
 // 2. 레이아웃 컴포넌트 (사이드바)
 // --------------------
 fn SidebarLayout() -> Element {
+    let state = use_context::<Signal<AppState>>();
+    if !state.read().consented {
+        return rsx! { ConsentScreen {} };
+    }
     rsx! {
         div { class: "app-container",
             // 왼쪽 사이드바
@@ -445,7 +451,7 @@ fn SidebarLayout() -> Element {
                     li { Link { to: Route::StudentList {}, class: "nav-item", "📝 학생 목록" } }
                     li { Link { to: Route::AssignClass {}, class: "nav-item", "😃 반 배정" } }
                     li { Link { to: Route::ResultDetail {}, class: "nav-item", "📋 배정 결과" } }
-                    li { Link { to: Route::InfoPage {}, class: "nav-item", "💁 정보" } }
+                    li { Link { to: Route::InfoPage {}, class: "nav-item", "💁 프로그램 정보" } }
                     // li { Link { to: Route::EguiPage {}, class: "nav-item", "EGUI TEST" } }
                 }
             }
@@ -463,27 +469,151 @@ fn SidebarLayout() -> Element {
 // --------------------
 
 #[component]
-fn MainPage() -> Element {
+fn ConsentScreen() -> Element {
     let mut state = use_context::<Signal<AppState>>();
+    let mut checked = use_signal(|| false);
+
+    let item_style = "margin-bottom: 14px;";
 
     rsx! {
-        div { class : "task-container",
-            h1 { "🚧 Under Construction" }
-            p { "간략한 학교 반 배정 프로그램입니다." }
-            p { "프로그램 내 모든 작업은 접속한 장치(PC, Mobile Device 등)에서 수행되며, 서버로 데이터를 전송하지 않습니다." }
-            p { "따라서 작업 내용을 저장하지 않으면 데이터를 잃을 수 있으니 주의해야 합니다." }
-            b { "작업 순서 :" }
-            ol {
-                li { "학생 목록을 구성합니다"}
-                li { "반 배정을 수행합니다" }
+        div {
+            style: "min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; background: #f3f4f6; padding: 40px 20px; box-sizing: border-box; overflow-y: auto;",
+            div {
+                style: "max-width: 720px; width: 100%; background: white; padding: 32px 36px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);",
+                h1 { style: "margin-top: 0;", "이용 전 확인 및 동의" }
+                p { style: "color: #4b5563;",
+                    "본 프로그램은 학생 정보를 다루는 도구입니다. 시작하기 전에 아래 내용을 반드시 읽고 동의해 주세요."
+                }
+
+                ol { style: "margin: 20px 0; padding-left: 24px; line-height: 1.7; color: #1f2937;",
+                    li { style: "{item_style}",
+                        b { "데이터 처리 범위 · " }
+                        "모든 입력과 연산은 접속한 장치의 브라우저 내에서만 수행되며, 서버나 외부로 전송되지 않습니다. 새로고침이나 탭 종료 시 입력한 데이터는 소실됩니다."
+                    }
+                    li { style: "{item_style}",
+                        b { "개인정보 취급 책임 · " }
+                        "입력하는 학생의 성명·점수·비고 등은 민감한 개인정보에 해당할 수 있습니다. "
+                        b { "개인정보 보호법 등 관련 법령을 준수하여 본인의 책임 하에 취급" }
+                        "해야 하며, 제3자가 접근할 수 없는 환경에서 사용하세요. 화면 캡처·인쇄물·내보낸 CSV 파일의 보관 및 폐기 또한 사용자의 책임입니다."
+                    }
+                    li { style: "{item_style}",
+                        b { "결과에 대한 책임 · " }
+                        "배정 알고리즘이 산출한 결과는 "
+                        b { "참고용 보조 자료" }
+                        "이며, 교육적·법적·행정적 효력을 보장하지 않습니다. 결과의 활용 및 그로 인해 발생하는 모든 사항에 대한 책임은 전적으로 사용자에게 있으며, 본 프로그램의 저작자는 어떠한 책임도 지지 않습니다."
+                    }
+                    li { style: "{item_style}",
+                        b { "보증 부인 · " }
+                        "본 소프트웨어는 현 상태(\"AS IS\")로 제공됩니다. 특정 목적 적합성·무결성·연속적 가용성 등을 보증하지 않습니다. (MIT License)"
+                    }
+                }
+
+                label {
+                    style: "display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; cursor: pointer;",
+                    input {
+                        r#type: "checkbox",
+                        style: "width: 18px; height: 18px; flex-shrink: 0;",
+                        checked: "{checked}",
+                        oninput: move |evt| checked.set(evt.value() == "true"),
+                    }
+                    span {
+                        "위 내용을 모두 확인했으며, "
+                        b { "본인의 책임 하에" }
+                        " 프로그램을 사용하는 것에 동의합니다."
+                    }
+                }
+
+                button {
+                    disabled: "{!checked()}",
+                    onclick: move |_| {
+                        state.write().consented = true;
+                    },
+                    style: if checked() {
+                        "margin-top: 20px; width: 100%; padding: 14px; background: #2563eb; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer;"
+                    } else {
+                        "margin-top: 20px; width: 100%; padding: 14px; background: #9ca3af; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: not-allowed;"
+                    },
+                    "동의하고 시작하기"
+                }
+
+                p { style: "margin-top: 16px; font-size: 13px; color: #6b7280; text-align: center;",
+                    "동의하지 않을 경우 프로그램을 이용할 수 없습니다. 동의 상태는 브라우저 세션 동안만 유지됩니다."
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn MainPage() -> Element {
+    let state = use_context::<Signal<AppState>>();
+    let student_count = state.read().students.len();
+    let has_result = state.read().assignments.is_some();
+
+    let step_card = "flex: 1; min-width: 220px; padding: 16px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; text-decoration: none; color: inherit; display: block;";
+
+    rsx! {
+        div { style: "max-width: 800px; margin: 0 auto;",
+            h1 { "학급 배정 도우미" }
+            p { style: "color: #4b5563; font-size: 15px;",
+                "학생 명단을 입력하면 평균 점수와 성비의 균형을 맞춰 여러 학급으로 자동 배정해 주는 도구입니다."
             }
 
-            // 상태 변경
-            button {
-                onclick: move |_| state.write().count += 1,
-                "Increment"
+            div {
+                style: "margin-top: 20px; padding: 12px 16px; background: #fef3c7; border-left: 4px solid #f59e0b; border-radius: 4px; color: #78350f;",
+                b { "⚠ 데이터 주의 " }
+                "모든 작업은 접속한 장치의 브라우저 안에서만 수행됩니다. 새로고침하거나 탭을 닫으면 입력한 내용이 사라지므로, 중요한 명단은 "
+                b { "CSV 내보내기" }
+                " 로 저장해 두세요."
             }
 
+            h2 { style: "margin-top: 32px;", "작업 순서" }
+            div {
+                style: "display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px;",
+                Link {
+                    to: Route::StudentList {},
+                    style: "{step_card}",
+                    div { style: "color: #2563eb; font-weight: 600; font-size: 13px;", "STEP 1" }
+                    h3 { style: "margin: 4px 0;", "📝 학생 목록" }
+                    p { style: "color: #6b7280; font-size: 14px; margin: 0;",
+                        "학생 정보를 직접 입력하거나 CSV 로 가져옵니다."
+                    }
+                }
+                Link {
+                    to: Route::AssignClass {},
+                    style: "{step_card}",
+                    div { style: "color: #2563eb; font-weight: 600; font-size: 13px;", "STEP 2" }
+                    h3 { style: "margin: 4px 0;", "😃 반 배정" }
+                    p { style: "color: #6b7280; font-size: 14px; margin: 0;",
+                        "학급 수와 최적화 기준을 설정하고 배정을 실행합니다."
+                    }
+                }
+                Link {
+                    to: Route::ResultDetail {},
+                    style: "{step_card}",
+                    div { style: "color: #2563eb; font-weight: 600; font-size: 13px;", "STEP 3" }
+                    h3 { style: "margin: 4px 0;", "📋 배정 결과" }
+                    p { style: "color: #6b7280; font-size: 14px; margin: 0;",
+                        "결과를 확인·인쇄하거나 CSV 로 내보냅니다."
+                    }
+                }
+            }
+
+            h2 { style: "margin-top: 32px;", "현재 상태" }
+            table { style: "border-collapse: collapse; margin-top: 8px;",
+                tbody {
+                    tr {
+                        td { style: "padding: 4px 16px 4px 0; color: #6b7280; font-weight: 600;", "학생 수" }
+                        td { style: "padding: 4px 0;", "{student_count}명" }
+                    }
+                    tr {
+                        td { style: "padding: 4px 16px 4px 0; color: #6b7280; font-weight: 600;", "배정 결과" }
+                        td { style: "padding: 4px 0;",
+                            if has_result { "생성됨" } else { "아직 없음" }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -731,7 +861,12 @@ fn AssignClass() -> Element {
     let run_assign = move |_| {
         let (students, k, opt_s, opt_g) = {
             let s = state.read();
-            (s.students.clone(), s.number_of_class, s.opt_score, s.opt_gender)
+            (
+                s.students.clone(),
+                s.number_of_class,
+                s.opt_score,
+                s.opt_gender,
+            )
         };
         if students.is_empty() {
             status_msg.set("학생 목록이 비어 있습니다.".to_string());
@@ -739,7 +874,11 @@ fn AssignClass() -> Element {
             return;
         }
         let result = assign_classes(&students, k, opt_s, opt_g);
-        status_msg.set(format!("{}명을 {}개 반으로 배정했습니다.", students.len(), k));
+        status_msg.set(format!(
+            "{}명을 {}개 반으로 배정했습니다.",
+            students.len(),
+            k
+        ));
         state.write().assignments = Some(result);
     };
 
@@ -1050,13 +1189,144 @@ fn StudentRow(student: Student) -> Element {
     }
 }
 
-// ★ 핵심 기능: 무거운 작업과 프로그레스 바
 #[component]
 fn InfoPage() -> Element {
+    let th_style =
+        "text-align: left; padding: 8px; border-bottom: 2px solid #dee2e6; background: #f8f9fa;";
+    let td_style = "padding: 6px 8px; border-bottom: 1px solid #eee; vertical-align: top;";
+    let label_style =
+        "padding: 4px 16px 4px 0; color: #6b7280; font-weight: 600; white-space: nowrap;";
+    let section_style = "margin-top: 24px;";
+
     rsx! {
-        div { class: "task-container",
+        div { style: "max-width: 860px; margin: 0 auto;",
             h1 { "프로그램 정보" }
-            p { "버튼을 누르면 비동기 작업이 시작됩니다." }
+
+            h2 { style: "{section_style}", "개요" }
+            p {
+                "학교 반 배정을 도와주는 웹 애플리케이션입니다. 학생 명단(이름·성별·점수·비고)을 입력하거나 CSV 로 불러온 뒤, 평균 점수와 성비의 균형을 맞춰 여러 학급으로 자동 배정합니다."
+            }
+
+            h2 { style: "{section_style}", "기본 정보" }
+            table { style: "border-collapse: collapse;",
+                tbody {
+                    tr {
+                        td { style: "{label_style}", "프로그램명" }
+                        td { style: "padding: 4px 0;", "class-assigner-dx" }
+                    }
+                    tr {
+                        td { style: "{label_style}", "버전" }
+                        td { style: "padding: 4px 0;", "0.1.0" }
+                    }
+                    tr {
+                        td { style: "{label_style}", "저작자" }
+                        td { style: "padding: 4px 0;", "wdpk39 <wdpk39@gmail.com>" }
+                    }
+                }
+            }
+
+            h2 { style: "{section_style}", "기술 스택" }
+            ul {
+                li { b { "언어: " } "Rust (edition 2021)" }
+                li { b { "UI 프레임워크: " } "Dioxus 0.7" }
+                li { b { "실행 환경: " } "브라우저 WebAssembly (target: wasm32-unknown-unknown)" }
+                li { b { "스타일: " } "CSS (Tailwind 자동 모드)" }
+                li { b { "배포: " } "정적 파일 (서버리스)" }
+            }
+
+            h2 { style: "{section_style}", "사용 라이브러리" }
+            table {
+                style: "width: 100%; border-collapse: collapse; font-size: 14px;",
+                thead {
+                    tr {
+                        th { style: "{th_style}", "이름" }
+                        th { style: "{th_style}", "버전" }
+                        th { style: "{th_style}", "용도" }
+                        th { style: "{th_style}", "라이센스" }
+                    }
+                }
+                tbody {
+                    tr {
+                        td { style: "{td_style} font-family: monospace;", "dioxus" }
+                        td { style: "{td_style} color: #6b7280;", "0.7" }
+                        td { style: "{td_style}", "UI / 라우터" }
+                        td { style: "{td_style} color: #6b7280;", "MIT OR Apache-2.0" }
+                    }
+                    tr {
+                        td { style: "{td_style} font-family: monospace;", "dioxus-logger" }
+                        td { style: "{td_style} color: #6b7280;", "0.7" }
+                        td { style: "{td_style}", "로깅 초기화" }
+                        td { style: "{td_style} color: #6b7280;", "MIT OR Apache-2.0" }
+                    }
+                    tr {
+                        td { style: "{td_style} font-family: monospace;", "log" }
+                        td { style: "{td_style} color: #6b7280;", "0.4" }
+                        td { style: "{td_style}", "로그 파사드" }
+                        td { style: "{td_style} color: #6b7280;", "MIT OR Apache-2.0" }
+                    }
+                    tr {
+                        td { style: "{td_style} font-family: monospace;", "rand" }
+                        td { style: "{td_style} color: #6b7280;", "0.9" }
+                        td { style: "{td_style}", "난수 생성 / 셔플" }
+                        td { style: "{td_style} color: #6b7280;", "MIT OR Apache-2.0" }
+                    }
+                    tr {
+                        td { style: "{td_style} font-family: monospace;", "rand_distr" }
+                        td { style: "{td_style} color: #6b7280;", "0.5" }
+                        td { style: "{td_style}", "샘플 데이터용 정규분포" }
+                        td { style: "{td_style} color: #6b7280;", "MIT OR Apache-2.0" }
+                    }
+                    tr {
+                        td { style: "{td_style} font-family: monospace;", "getrandom" }
+                        td { style: "{td_style} color: #6b7280;", "0.3" }
+                        td { style: "{td_style}", "WASM 난수 소스 (wasm_js)" }
+                        td { style: "{td_style} color: #6b7280;", "MIT OR Apache-2.0" }
+                    }
+                    tr {
+                        td { style: "{td_style} font-family: monospace;", "gloo-timers" }
+                        td { style: "{td_style} color: #6b7280;", "0.3" }
+                        td { style: "{td_style}", "비동기 타이머" }
+                        td { style: "{td_style} color: #6b7280;", "MIT OR Apache-2.0" }
+                    }
+                }
+            }
+            p { style: "font-size: 13px; color: #6b7280; margin-top: 8px;",
+                "각 라이브러리의 저작권 및 라이센스 원문은 해당 프로젝트의 저장소를 따릅니다."
+            }
+
+            h2 { style: "{section_style}", "외부 리소스" }
+            ul {
+                li { "Google Fonts — Noto Color Emoji (이모지 렌더링, SIL Open Font License 1.1)" }
+            }
+
+            h2 { style: "{section_style}", "프로그램 라이센스" }
+            p {
+                "본 프로그램은 "
+                b { "MIT License" }
+                " 하에 배포됩니다. 자유롭게 사용·수정·재배포할 수 있으며, 사용으로 인한 결과에 대해 저작자는 책임을 지지 않습니다. 전문은 저장소의 "
+                code { "LICENSE" }
+                " 파일을 참조하세요."
+            }
+
+            h2 { style: "{section_style}", "개발 도구 (LLM)" }
+            p {
+                "본 프로그램의 설계·구현 과정에서 대규모 언어 모델(LLM)을 보조 도구로 활용했습니다."
+            }
+            ul {
+                li { b { "Claude" } " (Anthropic) — 코드 생성, 리팩터링, 버그 분석" }
+                li { "그 외 LLM 기반 코드 어시스턴트" }
+            }
+            p { style: "font-size: 13px; color: #6b7280;",
+                "최종 코드의 구조·동작 검증 및 책임은 저작자에게 있습니다."
+            }
+
+            h2 { style: "{section_style}", "데이터 처리 방침" }
+            ul {
+                li { "모든 연산은 접속한 장치의 브라우저 내에서만 수행됩니다." }
+                li { "학생 정보를 서버로 전송하거나 외부에 저장하지 않습니다." }
+                li { "새로고침하거나 탭을 닫으면 입력한 데이터가 사라집니다." }
+                li { "영구 보관이 필요하면 학생 목록 페이지에서 CSV 내보내기를 사용하세요." }
+            }
         }
     }
 }
