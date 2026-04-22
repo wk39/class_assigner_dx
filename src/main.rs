@@ -26,6 +26,9 @@ enum Route {
     #[route("/assign-class")]
     AssignClass {}, // 작업 페이지 2
     //
+    #[route("/assign-result")]
+    ResultDetail {},
+    //
     #[route("/info")]
     InfoPage {},
 
@@ -191,7 +194,7 @@ struct AppState {
     opt_score: bool,
     opt_gender: bool,
     //
-    // username: &'static str,
+    assignments: Option<Vec<ClassInfo>>,
 }
 
 fn App() -> Element {
@@ -223,12 +226,13 @@ fn App() -> Element {
             number_of_class: 10,
             //
             students,
-            next_student_id: 4,
+            next_student_id: n_students,
 
             //
             opt_score: true,
             opt_gender: true,
             //
+            assignments: None,
         })
     });
 
@@ -254,6 +258,7 @@ fn SidebarLayout() -> Element {
                     li { Link { to: Route::MainPage {}, class: "nav-item", "🏠 메인 페이지" } }
                     li { Link { to: Route::StudentList {}, class: "nav-item", "📝 학생 목록" } }
                     li { Link { to: Route::AssignClass {}, class: "nav-item", "😃 반 배정" } }
+                    li { Link { to: Route::ResultDetail {}, class: "nav-item", "📋 배정 결과" } }
                     li { Link { to: Route::InfoPage {}, class: "nav-item", "💁 정보" } }
                     // li { Link { to: Route::EguiPage {}, class: "nav-item", "EGUI TEST" } }
                 }
@@ -459,7 +464,6 @@ fn StudentList() -> Element {
 #[component]
 fn AssignClass() -> Element {
     let mut state = use_context::<Signal<AppState>>();
-    let mut assignments = use_signal(|| None::<Vec<ClassInfo>>);
     let mut status_msg = use_signal(String::new);
 
     let run_assign = move |_| {
@@ -469,12 +473,12 @@ fn AssignClass() -> Element {
         };
         if students.is_empty() {
             status_msg.set("학생 목록이 비어 있습니다.".to_string());
-            assignments.set(None);
+            state.write().assignments = None;
             return;
         }
         let result = assign_classes(&students, k, opt_s, opt_g);
         status_msg.set(format!("{}명을 {}개 반으로 배정했습니다.", students.len(), k));
-        assignments.set(Some(result));
+        state.write().assignments = Some(result);
     };
 
     rsx! {
@@ -544,7 +548,7 @@ fn AssignClass() -> Element {
             }
         }
 
-        if let Some(classes) = assignments() {
+        if let Some(classes) = state.read().assignments.clone() {
             AssignResult { classes }
         }
     }
@@ -567,7 +571,15 @@ fn AssignResult(classes: Vec<ClassInfo>) -> Element {
     rsx! {
         div {
             style: "max-width: 1400px; margin: 32px auto 0 auto;",
-            h2 { style: "margin: 0 0 4px 0;", "배정 결과" }
+            div {
+                style: "display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px;",
+                h2 { style: "margin: 0;", "배정 결과 요약" }
+                Link {
+                    to: Route::ResultDetail {},
+                    style: "padding: 6px 12px; background: #2563eb; color: white; border-radius: 6px; text-decoration: none; font-size: 14px;",
+                    "📋 상세 보기 →"
+                }
+            }
             p { style: "margin: 0 0 16px 0; color: #4b5563;",
                 "총 {total}명 · 전체 평균 {overall_avg:.2}점"
             }
@@ -577,6 +589,107 @@ fn AssignResult(classes: Vec<ClassInfo>) -> Element {
                     ClassCard { key: "{c.id}", info: c }
                 }
             }
+        }
+    }
+}
+
+#[component]
+fn ResultDetail() -> Element {
+    let state = use_context::<Signal<AppState>>();
+    let maybe_classes = state.read().assignments.clone();
+
+    rsx! {
+        div {
+            style: "max-width: 1200px; margin: 0 auto;",
+            h1 { "배정 결과 상세" }
+
+            if let Some(classes) = maybe_classes {
+                {
+                    let total: usize = classes.iter().map(|c| c.students.len()).sum();
+                    let overall_avg: f32 = if total > 0 {
+                        classes.iter().flat_map(|c| c.students.iter()).map(|s| s.score).sum::<f32>() / total as f32
+                    } else { 0.0 };
+                    rsx! {
+                        p { style: "color: #4b5563;", "총 {total}명 · 전체 평균 {overall_avg:.2}점" }
+                    }
+                }
+                for c in classes.into_iter() {
+                    ClassTable { key: "{c.id}", info: c }
+                }
+            } else {
+                div {
+                    style: "padding: 40px; background: #fff; border-radius: 8px; text-align: center; color: #6b7280;",
+                    p { "아직 배정이 실행되지 않았습니다." }
+                    p {
+                        Link {
+                            to: Route::AssignClass {},
+                            style: "color: #2563eb; text-decoration: none;",
+                            "→ 반 배정 페이지로 이동"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn ClassTable(info: ClassInfo) -> Element {
+    let avg = info.avg_score();
+    let male = info.count_gender(Gender::Male);
+    let female = info.count_gender(Gender::Female);
+    let n = info.students.len();
+    let id = info.id;
+
+    rsx! {
+        div { style: "margin-bottom: 28px;",
+            div {
+                style: "display: flex; justify-content: space-between; align-items: baseline; padding: 8px 0;",
+                h2 { style: "margin: 0;", "{id}반" }
+                span {
+                    style: "color: #4b5563; font-size: 14px;",
+                    "{n}명 · 평균 {avg:.1}점 · 남 {male} / 여 {female}"
+                }
+            }
+            table {
+                style: "width: 100%; border-collapse: collapse; box-shadow: 0 1px 4px rgba(0,0,0,0.06); background: #fff;",
+                thead {
+                    tr { style: "background-color: #f8f9fa; text-align: left;",
+                        th { style: "padding: 10px; border-bottom: 2px solid #dee2e6; width: 60px;", "ID" }
+                        th { style: "padding: 10px; border-bottom: 2px solid #dee2e6;", "이름" }
+                        th { style: "padding: 10px; border-bottom: 2px solid #dee2e6; width: 80px;", "성별" }
+                        th { style: "padding: 10px; border-bottom: 2px solid #dee2e6; width: 80px;", "점수" }
+                        th { style: "padding: 10px; border-bottom: 2px solid #dee2e6;", "비고" }
+                    }
+                }
+                tbody {
+                    for s in info.students.iter().cloned() {
+                        ResultRow { key: "{s.id}", student: s }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn ResultRow(student: Student) -> Element {
+    let name = student
+        .name
+        .clone()
+        .unwrap_or_else(|| format!("(ID {})", student.id));
+    let gender = student.gender.to_label();
+    let score = student.score;
+    let note = student.note.clone().unwrap_or_default();
+    let id = student.id;
+
+    rsx! {
+        tr { style: "border-bottom: 1px solid #eee;",
+            td { style: "padding: 8px; text-align: center; color: #6b7280;", "{id}" }
+            td { style: "padding: 8px;", "{name}" }
+            td { style: "padding: 8px;", "{gender}" }
+            td { style: "padding: 8px; text-align: right;", "{score:.1}" }
+            td { style: "padding: 8px; color: #6b7280;", "{note}" }
         }
     }
 }
