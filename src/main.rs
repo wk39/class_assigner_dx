@@ -655,16 +655,16 @@ fn StudentList() -> Element {
                     for student in state.read().students.iter().cloned() {
                         tr {
                             key: "{student.id}",
-                            style: "border-bottom: 1px solid #eee; height: 50px;", // 행 높이 지정
+                            style: "border-bottom: 1px solid #eee;",
 
                             // 1. ID (읽기 전용)
-                            td { style: "padding: 10px; text-align: center; color: #666;", "{student.id}" }
+                            td { style: "padding: 3px 6px; text-align: center; color: #666;", "{student.id}" }
 
                             // 2. 이름 (Option<String>)
-                            td { style: "padding: 10px;",
+                            td { style: "padding: 3px 6px;",
                                 input {
                                     r#type: "text",
-                                    style: "width: 100%; padding: 5px; border: 1px solid #ccc; border-radius: 4px;",
+                                    style: "width: 100%; padding: 3px 6px; border: 1px solid #ccc; border-radius: 4px;",
                                     placeholder: "이름 입력",
                                     // Some이면 값, None이면 빈 문자열
                                     value: "{student.name.clone().unwrap_or_default()}",
@@ -673,9 +673,9 @@ fn StudentList() -> Element {
                             }
 
                             // 3. 성별 (Enum -> Select Box)
-                            td { style: "padding: 10px;",
+                            td { style: "padding: 3px 6px;",
                                 select {
-                                    style: "width: 100%; padding: 5px; border: 1px solid #ccc; border-radius: 4px;",
+                                    style: "width: 100%; padding: 3px 6px; border: 1px solid #ccc; border-radius: 4px;",
                                     value: "{student.gender.to_value()}", // 현재 값 선택
                                     oninput: move |evt| update_gender(student.id, evt.value()),
 
@@ -685,22 +685,22 @@ fn StudentList() -> Element {
                             }
 
                             // 4. 점수 (f32)
-                            td { style: "padding: 10px;",
+                            td { style: "padding: 3px 6px;",
                                 input {
                                     r#type: "number",
                                     // step="0.1"을 주어야 소수점 입력 가능
                                     step: "0.1",
-                                    style: "width: 100%; padding: 5px; border: 1px solid #ccc; border-radius: 4px; text-align: right;",
+                                    style: "width: 100%; padding: 3px 6px; border: 1px solid #ccc; border-radius: 4px; text-align: right;",
                                     value: "{student.score}",
                                     oninput: move |evt| update_score(student.id, evt.value())
                                 }
                             }
 
                             // 5. 비고 (Option<String>)
-                            td { style: "padding: 10px;",
+                            td { style: "padding: 3px 6px;",
                                 input {
                                     r#type: "text",
-                                    style: "width: 100%; padding: 5px; border: 1px solid #ccc; border-radius: 4px;",
+                                    style: "width: 100%; padding: 3px 6px; border: 1px solid #ccc; border-radius: 4px;",
                                     placeholder: "특이사항 없음",
                                     value: "{student.note.clone().unwrap_or_default()}",
                                     oninput: move |evt| update_note(student.id, evt.value())
@@ -708,10 +708,10 @@ fn StudentList() -> Element {
                             }
 
                             // 6. 삭제 버튼
-                            td { style: "padding: 10px; text-align: center;",
+                            td { style: "padding: 3px 6px; text-align: center;",
                                 button {
                                     onclick: move |_| remove_student(student.id),
-                                    style: "background: #dc3545; color: white; border: none; border-radius: 4px; padding: 5px 10px; cursor: pointer;",
+                                    style: "background: #dc3545; color: white; border: none; border-radius: 4px; padding: 3px 8px; cursor: pointer;",
                                     "X"
                                 }
                             }
@@ -957,6 +957,10 @@ fn ResultRow(student: Student) -> Element {
         .clone()
         .unwrap_or_else(|| format!("(ID {})", student.id));
     let gender = student.gender.to_label();
+    let gender_color = match student.gender {
+        Gender::Male => "#2563eb",
+        Gender::Female => "#db2777",
+    };
     let score = student.score;
     let note = student.note.clone().unwrap_or_default();
     let id = student.id;
@@ -965,7 +969,7 @@ fn ResultRow(student: Student) -> Element {
         tr { style: "border-bottom: 1px solid #eee;",
             td { style: "padding: 8px; text-align: center; color: #6b7280;", "{id}" }
             td { style: "padding: 8px;", "{name}" }
-            td { style: "padding: 8px;", "{gender}" }
+            td { style: "padding: 8px; color: {gender_color}; font-weight: 600;", "{gender}" }
             td { style: "padding: 8px; text-align: right;", "{score:.1}" }
             td { style: "padding: 8px; color: #6b7280;", "{note}" }
         }
