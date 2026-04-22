@@ -5,13 +5,10 @@
 
 body {
   margin: 0;
-  font-family: 'Noto Color Emoji', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif, "Noto Color Emoji";
+  font-variant-numeric: tabular-nums;
 }
-
-/* body { */
-/*   margin: 0; */
-/*   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; */
-/* } */
 
 /* 레이아웃 */
 .app-container {

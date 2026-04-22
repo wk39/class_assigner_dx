@@ -1,9 +1,7 @@
 #![allow(non_snake_case)]
 
 use dioxus::prelude::*;
-use gloo_timers::future::TimeoutFuture; // 비동기 지연(sleep)용
-                                        //
-use rand::{rngs::StdRng, Rng as _, SeedableRng as _};
+use rand::{rngs::StdRng, seq::SliceRandom, Rng as _, SeedableRng as _};
 use rand_distr::{Distribution as _, Normal};
 
 const FAVICON: Asset = asset!("/assets/favicon.ico");
@@ -50,14 +48,12 @@ pub(crate) enum Gender {
     Female,
 }
 impl Gender {
-    // 화면 표시용 텍스트
-    // fn to_label(&self) -> &'static str {
-    //     match self {
-    //         Gender::Male => "남",
-    //         Gender::Female => "여",
-    //     }
-    // }
-    // HTML value 속성용
+    fn to_label(&self) -> &'static str {
+        match self {
+            Gender::Male => "남",
+            Gender::Female => "여",
+        }
+    }
     fn to_value(&self) -> &'static str {
         match self {
             Gender::Male => "male",
@@ -75,7 +71,7 @@ impl Gender {
 
 pub(crate) type StudentId = u32;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Student {
     pub(crate) id: StudentId,
     pub(crate) name: Option<String>,
@@ -111,6 +107,77 @@ impl Student {
             valid: false,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ClassInfo {
+    pub(crate) id: u8,
+    pub(crate) students: Vec<Student>,
+}
+impl ClassInfo {
+    fn avg_score(&self) -> f32 {
+        if self.students.is_empty() {
+            return 0.0;
+        }
+        let sum: f32 = self.students.iter().map(|s| s.score).sum();
+        sum / self.students.len() as f32
+    }
+    fn count_gender(&self, g: Gender) -> usize {
+        self.students.iter().filter(|s| s.gender == g).count()
+    }
+}
+
+fn assign_classes(
+    students: &[Student],
+    k: u8,
+    opt_score: bool,
+    opt_gender: bool,
+) -> Vec<ClassInfo> {
+    let k = (k as usize).max(1);
+    let mut classes: Vec<ClassInfo> = (1..=k as u8)
+        .map(|id| ClassInfo {
+            id,
+            students: Vec::new(),
+        })
+        .collect();
+
+    let groups: Vec<Vec<Student>> = if opt_gender {
+        vec![
+            students
+                .iter()
+                .filter(|s| s.gender == Gender::Male)
+                .cloned()
+                .collect(),
+            students
+                .iter()
+                .filter(|s| s.gender == Gender::Female)
+                .cloned()
+                .collect(),
+        ]
+    } else {
+        vec![students.to_vec()]
+    };
+
+    let mut rng = StdRng::from_os_rng();
+    for mut group in groups {
+        if opt_score {
+            group.sort_by(|a, b| {
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+        } else {
+            group.shuffle(&mut rng);
+        }
+        for (idx, student) in group.into_iter().enumerate() {
+            let round = idx / k;
+            let pos = idx % k;
+            let class_idx = if round % 2 == 0 { pos } else { k - 1 - pos };
+            classes[class_idx].students.push(student);
+        }
+    }
+
+    classes
 }
 
 #[derive(Clone)]
@@ -389,157 +456,182 @@ fn StudentList() -> Element {
     }
 }
 
-// ★ 핵심 기능: 무거운 작업과 프로그레스 바
 #[component]
 fn AssignClass() -> Element {
     let mut state = use_context::<Signal<AppState>>();
+    let mut assignments = use_signal(|| None::<Vec<ClassInfo>>);
+    let mut status_msg = use_signal(String::new);
 
-    // Signals: 상태 관리
-    let mut is_running = use_signal(|| false); // 작업 실행 중 여부
-    let mut progress = use_signal(|| 0); // 진행률 (0 ~ 100)
-
-    // 작업 시작 핸들러
-    let start_processing = move |_| {
-        if is_running() {
+    let run_assign = move |_| {
+        let (students, k, opt_s, opt_g) = {
+            let s = state.read();
+            (s.students.clone(), s.number_of_class, s.opt_score, s.opt_gender)
+        };
+        if students.is_empty() {
+            status_msg.set("학생 목록이 비어 있습니다.".to_string());
+            assignments.set(None);
             return;
-        } // 중복 실행 방지
-
-        // 상태 초기화
-        is_running.set(true);
-        progress.set(0);
-
-        // 비동기 작업 스폰 (spawn)
-        // 메인 스레드(UI)를 차단하지 않기 위해 spawn을 사용합니다.
-        spawn(async move {
-            for i in 1..=100 {
-                // 무거운 작업을 흉내내기 위해 10ms 대기 (실제 로직 대체 가능)
-                TimeoutFuture::new(10).await;
-
-                // 진행률 업데이트 -> UI 자동 렌더링
-                progress.set(i);
-            }
-            // 완료 후 상태 복귀
-            is_running.set(false);
-        });
+        }
+        let result = assign_classes(&students, k, opt_s, opt_g);
+        status_msg.set(format!("{}명을 {}개 반으로 배정했습니다.", students.len(), k));
+        assignments.set(Some(result));
     };
 
     rsx! {
         div { class: "task-container",
             h1 { "반 배정" }
-            h2 { "학급 수를 설정합니다." }
 
-            // 3. 슬라이드 바 구현
+            h2 { "학급 수를 설정합니다." }
             input {
                 style: "margin-top: 10px; margin-left: 20px;",
-                r#type: "range", // 슬라이더 타입
-                min: "3",        // 최소값
-                max: "30",      // 최대값
-                step: "1",       // 이동 단위
-
-                // [중요] 현재 상태를 슬라이더 위치에 반영 (Two-way binding의 절반)
+                r#type: "range",
+                min: "3",
+                max: "30",
+                step: "1",
                 value: "{state().number_of_class}",
-
-                // [중요] 슬라이더 움직임 감지하여 상태 업데이트
                 oninput: move |evt| {
-                    // 입력값은 문자열로 들어오므로 숫자로 변환
                     if let Ok(val) = evt.value().parse::<u8>() {
                         state.write().number_of_class = val;
                     }
                 }
             }
-
-            // 현재 슬라이더 값 옆에 표시
             span {
                 style: "margin-left: 10px; font-weight: bold;",
                 "{state().number_of_class} 반"
             }
 
             h2 { "최적화 기준을 선택합니다." }
-                // [체크박스 구현 부분]
-                div {
-                    style: "margin-top: 10px; margin-left: 20px;",
-                    label {
-                        // 클릭 영역을 넓히기 위해 label 안에 input을 넣는 패턴 권장
-                        style: "cursor: pointer; display: flex; align-items: center;",
-
-                        input {
-                            r#type: "checkbox",
-                            style: "width: 20px; height: 20px; margin-right: 8px;", // 크기 키우기
-
-                            // 1. 현재 상태 반영 (true면 체크표시)
-                            checked: "{state().opt_score}",
-
-                            // 2. 클릭 시 상태 변경
-                            oninput: move |evt| {
-                                // Dioxus에서 checkbox의 evt.value()는 "true" 또는 "false" 문자열을 반환함
-                                let is_checked = evt.value() == "true";
-                                state.write().opt_score = is_checked;
-                            }
+            div {
+                style: "margin-top: 10px; margin-left: 20px;",
+                label {
+                    style: "cursor: pointer; display: flex; align-items: center;",
+                    input {
+                        r#type: "checkbox",
+                        style: "width: 20px; height: 20px; margin-right: 8px;",
+                        checked: "{state().opt_score}",
+                        oninput: move |evt| {
+                            state.write().opt_score = evt.value() == "true";
                         }
-                        "평균점수 균형"
                     }
-
-                    label {
-                        // 클릭 영역을 넓히기 위해 label 안에 input을 넣는 패턴 권장
-                        style: "cursor: pointer; display: flex; align-items: center;",
-
-                        input {
-                            r#type: "checkbox",
-                            style: "width: 20px; height: 20px; margin-right: 8px;", // 크기 키우기
-
-                            // 1. 현재 상태 반영 (true면 체크표시)
-                            checked: "{state().opt_gender}",
-
-                            // 2. 클릭 시 상태 변경
-                            oninput: move |evt| {
-                                // Dioxus에서 checkbox의 evt.value()는 "true" 또는 "false" 문자열을 반환함
-                                let is_checked = evt.value() == "true";
-                                state.write().opt_gender = is_checked;
-                            }
+                    "평균점수 균형"
+                }
+                label {
+                    style: "cursor: pointer; display: flex; align-items: center;",
+                    input {
+                        r#type: "checkbox",
+                        style: "width: 20px; height: 20px; margin-right: 8px;",
+                        checked: "{state().opt_gender}",
+                        oninput: move |evt| {
+                            state.write().opt_gender = evt.value() == "true";
                         }
-                        "성비 균형"
                     }
-                }
-
-            h2 { "알고리즘을 선택합니다." }
-            p { ">> 🚧 Under Construction" }
-
-            div { class: "card",
-                // 프로그레스 바 상단 텍스트
-                div { class: "progress-info",
-                    span {
-                        "Status: " // 일반 텍스트
-                        if is_running() { "처리 중..." } else { "대기 중" } // Rust 코드 블록
-                    }
-                    span { "{progress}%" }
-                }
-
-
-                // HTML5 Progress Bar
-                progress {
-                    class: "styled-progress",
-                    value: "{progress}",
-                    max: "100"
-                }
-
-                // 실행 버튼
-                button {
-                    class: if is_running() { "btn disabled" } else { "btn primary" },
-                    disabled: "{is_running}", // 실행 중이면 클릭 불가
-                    onclick: start_processing,
-
-                    if is_running() {
-                        "⏳ 작업 수행 중..."
-                    } else {
-                        "🚀 작업 시작"
-                    }
-                }
-
-                // 완료 메시지
-                if progress() == 100 && !is_running() {
-                    div { class: "success-message", "✅ 모든 작업이 완료되었습니다!" }
+                    "성비 균형"
                 }
             }
+
+            div { class: "card",
+                button {
+                    class: "btn primary",
+                    onclick: run_assign,
+                    "🚀 반 배정 실행"
+                }
+                if !status_msg().is_empty() {
+                    div {
+                        style: "margin-top: 12px; color: #4b5563; text-align: center;",
+                        "{status_msg}"
+                    }
+                }
+            }
+        }
+
+        if let Some(classes) = assignments() {
+            AssignResult { classes }
+        }
+    }
+}
+
+#[component]
+fn AssignResult(classes: Vec<ClassInfo>) -> Element {
+    let total: usize = classes.iter().map(|c| c.students.len()).sum();
+    let overall_avg: f32 = if total > 0 {
+        classes
+            .iter()
+            .flat_map(|c| c.students.iter())
+            .map(|s| s.score)
+            .sum::<f32>()
+            / total as f32
+    } else {
+        0.0
+    };
+
+    rsx! {
+        div {
+            style: "max-width: 1400px; margin: 32px auto 0 auto;",
+            h2 { style: "margin: 0 0 4px 0;", "배정 결과" }
+            p { style: "margin: 0 0 16px 0; color: #4b5563;",
+                "총 {total}명 · 전체 평균 {overall_avg:.2}점"
+            }
+            div {
+                style: "display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; align-items: start;",
+                for c in classes.into_iter() {
+                    ClassCard { key: "{c.id}", info: c }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn ClassCard(info: ClassInfo) -> Element {
+    let avg = info.avg_score();
+    let male = info.count_gender(Gender::Male);
+    let female = info.count_gender(Gender::Female);
+    let n = info.students.len();
+    let id = info.id;
+
+    rsx! {
+        div {
+            style: "border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.04);",
+            div {
+                style: "display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid #f3f4f6; padding-bottom: 8px;",
+                h3 { style: "margin: 0; font-size: 18px;", "{id}반" }
+                span { style: "color: #6b7280; font-size: 13px;", "{n}명" }
+            }
+            div {
+                style: "margin-top: 8px; font-size: 13px; color: #374151;",
+                "평균 {avg:.1}점 · 남 {male} / 여 {female}"
+            }
+            div {
+                style: "margin-top: 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 4px 10px; font-size: 13px;",
+                for s in info.students.iter().cloned() {
+                    StudentRow { key: "{s.id}", student: s }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn StudentRow(student: Student) -> Element {
+    let name = student
+        .name
+        .clone()
+        .unwrap_or_else(|| format!("#{}", student.id));
+    let gender = student.gender.to_label();
+    let gender_color = match student.gender {
+        Gender::Male => "#2563eb",
+        Gender::Female => "#db2777",
+    };
+    let score = student.score;
+    rsx! {
+        div {
+            style: "display: flex; justify-content: space-between; gap: 6px; padding: 2px 0; border-bottom: 1px dashed #f3f4f6;",
+            span {
+                style: "overflow: hidden; text-overflow: ellipsis; white-space: nowrap;",
+                span { style: "color: {gender_color}; margin-right: 4px;", "{gender}" }
+                "{name}"
+            }
+            span { style: "color: #6b7280;", "{score:.1}" }
         }
     }
 }
