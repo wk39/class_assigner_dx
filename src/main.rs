@@ -744,7 +744,7 @@ fn AssignClass() -> Element {
     };
 
     rsx! {
-        div { class: "task-container",
+        div { class: "task-container no-print",
             h1 { "반 배정" }
 
             h2 { "학급 수를 설정합니다." }
@@ -834,12 +834,21 @@ fn AssignResult(classes: Vec<ClassInfo>) -> Element {
         div {
             style: "max-width: 1400px; margin: 32px auto 0 auto;",
             div {
-                style: "display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px;",
+                style: "display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; gap: 8px; flex-wrap: wrap;",
                 h2 { style: "margin: 0;", "배정 결과 요약" }
-                Link {
-                    to: Route::ResultDetail {},
-                    style: "padding: 6px 12px; background: #2563eb; color: white; border-radius: 6px; text-decoration: none; font-size: 14px;",
-                    "📋 상세 보기 →"
+                div {
+                    class: "no-print",
+                    style: "display: flex; gap: 8px;",
+                    button {
+                        onclick: move |_| { let _ = document::eval("window.print();"); },
+                        style: "padding: 6px 12px; background: #6c757d; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;",
+                        "🖨 인쇄"
+                    }
+                    Link {
+                        to: Route::ResultDetail {},
+                        style: "padding: 6px 12px; background: #2563eb; color: white; border-radius: 6px; text-decoration: none; font-size: 14px;",
+                        "📋 상세 보기 →"
+                    }
                 }
             }
             p { style: "margin: 0 0 16px 0; color: #4b5563;",
@@ -864,17 +873,26 @@ fn ResultDetail() -> Element {
         div {
             style: "max-width: 1200px; margin: 0 auto;",
             div {
-                style: "display: flex; justify-content: space-between; align-items: baseline;",
+                style: "display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap;",
                 h1 { style: "margin: 0;", "배정 결과 상세" }
                 if let Some(classes) = &maybe_classes {
                     {
                         let export_url = csv_data_url(&assignments_to_csv(classes));
                         rsx! {
-                            a {
-                                href: "{export_url}",
-                                download: "class-assignment.csv",
-                                style: "padding: 8px 15px; background: #6c757d; color: white; border-radius: 4px; text-decoration: none; font-size: 14px;",
-                                "📤 CSV 내보내기"
+                            div {
+                                class: "no-print",
+                                style: "display: flex; gap: 8px;",
+                                button {
+                                    onclick: move |_| { let _ = document::eval("window.print();"); },
+                                    style: "padding: 8px 15px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;",
+                                    "🖨 인쇄"
+                                }
+                                a {
+                                    href: "{export_url}",
+                                    download: "class-assignment.csv",
+                                    style: "padding: 8px 15px; background: #6c757d; color: white; border-radius: 4px; text-decoration: none; font-size: 14px;",
+                                    "📤 CSV 내보내기"
+                                }
                             }
                         }
                     }
@@ -920,7 +938,7 @@ fn ClassTable(info: ClassInfo) -> Element {
     let id = info.id;
 
     rsx! {
-        div { style: "margin-bottom: 28px;",
+        div { class: "print-class", style: "margin-bottom: 28px;",
             div {
                 style: "display: flex; justify-content: space-between; align-items: baseline; padding: 8px 0;",
                 h2 { style: "margin: 0;", "{id}반" }
@@ -986,6 +1004,7 @@ fn ClassCard(info: ClassInfo) -> Element {
 
     rsx! {
         div {
+            class: "print-class",
             style: "border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.04);",
             div {
                 style: "display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid #f3f4f6; padding-bottom: 8px;",

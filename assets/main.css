@@ -129,3 +129,48 @@ body {
   text-align: center;
   font-weight: bold;
 }
+
+/* 인쇄 전용 */
+@media print {
+  @page {
+    margin: 12mm;
+  }
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  .sidebar,
+  .no-print {
+    display: none !important;
+  }
+  .app-container {
+    display: block !important;
+    height: auto !important;
+    width: auto !important;
+  }
+  .content-area {
+    padding: 0 !important;
+    background: white !important;
+    overflow: visible !important;
+  }
+  .card {
+    box-shadow: none !important;
+    border: 1px solid #ccc !important;
+  }
+  .print-class {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  a {
+    color: inherit !important;
+    text-decoration: none !important;
+  }
+  h1 { font-size: 16pt; margin: 0 0 6pt 0; }
+  h2 { font-size: 13pt; margin: 8pt 0 4pt 0; }
+  h3 { font-size: 11pt; margin: 0; }
+  table { font-size: 10pt; }
+  input, select {
+    border: none !important;
+    background: transparent !important;
+  }
+}
