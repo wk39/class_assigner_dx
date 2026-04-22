@@ -183,6 +183,192 @@ fn assign_classes(
     classes
 }
 
+// --------------------
+// CSV helpers
+// --------------------
+
+fn escape_csv(field: &str) -> String {
+    if field.contains(',') || field.contains('"') || field.contains('\n') {
+        format!("\"{}\"", field.replace('"', "\"\""))
+    } else {
+        field.to_string()
+    }
+}
+
+fn students_to_csv(students: &[Student]) -> String {
+    let mut out = String::from("\u{FEFF}name,gender,score,note\n");
+    for s in students {
+        let name = s.name.clone().unwrap_or_default();
+        let gender = s.gender.to_label();
+        let note = s.note.clone().unwrap_or_default();
+        out.push_str(&format!(
+            "{},{},{:.2},{}\n",
+            escape_csv(&name),
+            gender,
+            s.score,
+            escape_csv(&note),
+        ));
+    }
+    out
+}
+
+fn assignments_to_csv(classes: &[ClassInfo]) -> String {
+    let mut out = String::from("\u{FEFF}class,id,name,gender,score,note\n");
+    for c in classes {
+        for s in &c.students {
+            let name = s.name.clone().unwrap_or_default();
+            let gender = s.gender.to_label();
+            let note = s.note.clone().unwrap_or_default();
+            out.push_str(&format!(
+                "{},{},{},{},{:.2},{}\n",
+                c.id,
+                s.id,
+                escape_csv(&name),
+                gender,
+                s.score,
+                escape_csv(&note),
+            ));
+        }
+    }
+    out
+}
+
+fn encode_uri_component(s: &str) -> String {
+    let mut out = String::new();
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{:02X}", b)),
+        }
+    }
+    out
+}
+
+fn csv_data_url(csv: &str) -> String {
+    format!("data:text/csv;charset=utf-8,{}", encode_uri_component(csv))
+}
+
+fn parse_csv_line(line: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let mut in_quotes = false;
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '"' if in_quotes && chars.peek() == Some(&'"') => {
+                cur.push('"');
+                chars.next();
+            }
+            '"' => in_quotes = !in_quotes,
+            ',' if !in_quotes => out.push(std::mem::take(&mut cur)),
+            _ => cur.push(c),
+        }
+    }
+    out.push(cur);
+    out
+}
+
+fn looks_like_header(cols: &[String]) -> bool {
+    cols.iter().any(|c| {
+        matches!(
+            c.trim().to_lowercase().as_str(),
+            "name"
+                | "이름"
+                | "성명"
+                | "gender"
+                | "성별"
+                | "score"
+                | "점수"
+                | "note"
+                | "비고"
+                | "class"
+                | "반"
+                | "id"
+        )
+    })
+}
+
+fn parse_students_csv(content: &str, start_id: u32) -> Vec<Student> {
+    let content = content.trim_start_matches('\u{FEFF}');
+    let mut students = Vec::new();
+    let mut next_id = start_id;
+
+    let (name_idx, gender_idx, score_idx, note_idx, data_lines): (
+        usize,
+        usize,
+        usize,
+        usize,
+        Vec<&str>,
+    ) = {
+        let mut lines = content.lines();
+        let first = lines.clone().next();
+        if let Some(first_line) = first {
+            let cols = parse_csv_line(first_line);
+            if looks_like_header(&cols) {
+                let mut ni = 0usize;
+                let mut gi = 1usize;
+                let mut sci = 2usize;
+                let mut noi = 3usize;
+                for (i, c) in cols.iter().enumerate() {
+                    match c.trim().to_lowercase().as_str() {
+                        "name" | "이름" | "성명" => ni = i,
+                        "gender" | "성별" => gi = i,
+                        "score" | "점수" => sci = i,
+                        "note" | "비고" => noi = i,
+                        _ => {}
+                    }
+                }
+                lines.next();
+                (ni, gi, sci, noi, lines.collect())
+            } else {
+                (0, 1, 2, 3, content.lines().collect())
+            }
+        } else {
+            (0, 1, 2, 3, Vec::new())
+        }
+    };
+
+    for line in data_lines {
+        let cols = parse_csv_line(line);
+        if cols.iter().all(|c| c.trim().is_empty()) {
+            continue;
+        }
+        let name = cols.get(name_idx).and_then(|s| {
+            let t = s.trim();
+            (!t.is_empty()).then(|| t.to_string())
+        });
+        let gender = cols
+            .get(gender_idx)
+            .map(|s| match s.trim().to_lowercase().as_str() {
+                "여" | "female" | "f" => Gender::Female,
+                _ => Gender::Male,
+            })
+            .unwrap_or(Gender::Male);
+        let score = cols
+            .get(score_idx)
+            .and_then(|s| s.trim().parse::<f32>().ok())
+            .unwrap_or(0.0);
+        let note = cols.get(note_idx).and_then(|s| {
+            let t = s.trim();
+            (!t.is_empty()).then(|| t.to_string())
+        });
+
+        students.push(Student {
+            id: next_id,
+            name,
+            note,
+            gender,
+            score,
+            valid: false,
+        });
+        next_id += 1;
+    }
+
+    students
+}
+
 #[derive(Clone)]
 struct AppState {
     count: i32,
@@ -304,6 +490,7 @@ fn MainPage() -> Element {
 
 fn StudentList() -> Element {
     let mut state = use_context::<Signal<AppState>>();
+    let mut status_msg = use_signal(String::new);
 
     // 학생 추가
     let add_student = move |_| {
@@ -311,6 +498,46 @@ fn StudentList() -> Element {
         let id = ss.next_student_id;
         ss.students.push(Student::new(id, None, Gender::Male, 0.0));
         ss.next_student_id += 1;
+    };
+
+    // CSV 가져오기 (교체)
+    let import_csv = move |evt: FormEvent| {
+        let files = evt.files();
+        let Some(file) = files.into_iter().next() else {
+            return;
+        };
+        spawn(async move {
+            match file.read_string().await {
+                Ok(contents) => {
+                    let new_students = parse_students_csv(&contents, 0);
+                    let count = new_students.len();
+                    let mut ss = state.write();
+                    ss.students = new_students;
+                    ss.next_student_id = count as u32;
+                    ss.assignments = None;
+                    status_msg.set(format!("{}명을 가져왔습니다.", count));
+                }
+                Err(e) => {
+                    status_msg.set(format!("파일을 읽을 수 없습니다: {e}"));
+                }
+            }
+            // 동일 파일 재선택 시에도 onchange 발생하도록 value 초기화
+            let _ = document::eval(
+                r#"
+                const el = document.getElementById('csv-import-input');
+                if (el) el.value = '';
+                "#,
+            );
+        });
+    };
+
+    // 모두 삭제
+    let clear_all = move |_| {
+        let mut ss = state.write();
+        ss.students.clear();
+        ss.next_student_id = 0;
+        ss.assignments = None;
+        status_msg.set("학생 목록을 비웠습니다.".to_string());
     };
 
     // 학생 삭제
@@ -359,16 +586,51 @@ fn StudentList() -> Element {
             s.note = new_val;
         }
     };
+    let export_url = csv_data_url(&students_to_csv(&state.read().students));
+    let student_count = state.read().students.len();
+
     rsx! {
         div {
             style: "max-width: 900px;",
 
             // 상단 버튼
-            div { style: "text-align: right; margin-bottom: 10px;",
-                button {
-                    onclick: add_student,
-                    style: "padding: 8px 15px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;",
-                    "+ 학생 추가"
+            div {
+                style: "display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px; flex-wrap: wrap;",
+                div { style: "color: #4b5563; font-size: 14px;", "총 {student_count}명" }
+                div { style: "display: flex; gap: 8px; flex-wrap: wrap;",
+                    label {
+                        style: "padding: 8px 15px; background: #198754; color: white; border-radius: 4px; cursor: pointer; font-size: 14px;",
+                        "📥 CSV 가져오기"
+                        input {
+                            id: "csv-import-input",
+                            r#type: "file",
+                            accept: ".csv,text/csv",
+                            style: "display: none;",
+                            onchange: import_csv,
+                        }
+                    }
+                    a {
+                        href: "{export_url}",
+                        download: "students.csv",
+                        style: "padding: 8px 15px; background: #6c757d; color: white; border-radius: 4px; text-decoration: none; font-size: 14px;",
+                        "📤 CSV 내보내기"
+                    }
+                    button {
+                        onclick: clear_all,
+                        style: "padding: 8px 15px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;",
+                        "🗑 모두 삭제"
+                    }
+                    button {
+                        onclick: add_student,
+                        style: "padding: 8px 15px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;",
+                        "+ 학생 추가"
+                    }
+                }
+            }
+            if !status_msg().is_empty() {
+                div {
+                    style: "margin-bottom: 10px; padding: 8px 12px; background: #e7f3ff; color: #084298; border-radius: 4px; font-size: 14px;",
+                    "{status_msg}"
                 }
             }
 
@@ -601,7 +863,23 @@ fn ResultDetail() -> Element {
     rsx! {
         div {
             style: "max-width: 1200px; margin: 0 auto;",
-            h1 { "배정 결과 상세" }
+            div {
+                style: "display: flex; justify-content: space-between; align-items: baseline;",
+                h1 { style: "margin: 0;", "배정 결과 상세" }
+                if let Some(classes) = &maybe_classes {
+                    {
+                        let export_url = csv_data_url(&assignments_to_csv(classes));
+                        rsx! {
+                            a {
+                                href: "{export_url}",
+                                download: "class-assignment.csv",
+                                style: "padding: 8px 15px; background: #6c757d; color: white; border-radius: 4px; text-decoration: none; font-size: 14px;",
+                                "📤 CSV 내보내기"
+                            }
+                        }
+                    }
+                }
+            }
 
             if let Some(classes) = maybe_classes {
                 {
@@ -610,7 +888,7 @@ fn ResultDetail() -> Element {
                         classes.iter().flat_map(|c| c.students.iter()).map(|s| s.score).sum::<f32>() / total as f32
                     } else { 0.0 };
                     rsx! {
-                        p { style: "color: #4b5563;", "총 {total}명 · 전체 평균 {overall_avg:.2}점" }
+                        p { style: "color: #4b5563; margin-top: 8px;", "총 {total}명 · 전체 평균 {overall_avg:.2}점" }
                     }
                 }
                 for c in classes.into_iter() {
